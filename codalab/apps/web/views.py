@@ -9,7 +9,11 @@ import traceback
 import yaml
 import zipfile
 
-from django.contrib.auth.mixins import LoginRequiredMixin
+from decimal import Decimal
+
+from django.utils.safestring import mark_safe
+from django.views.generic.base import ContextMixin
+from yaml.representer import SafeRepresenter
 
 from django.db import connection
 from django.conf import settings
@@ -50,6 +54,8 @@ from apps.web.models import SubmissionScore, SubmissionScoreDef, get_current_pha
     get_first_previous_active_and_next_phases, CompetitionDefBundle, CompetitionSubmission, CompetitionSubmissionStatus, \
     CompetitionParticipant
 
+from apps.authenz.models import ClUser
+from apps.customizer.models import Configuration
 from tasks import evaluate_submission, re_run_all_submissions_in_phase, create_competition, _make_url_sassy, \
     make_modified_bundle
 from apps.teams.models import TeamMembership, get_user_team, get_competition_teams, get_competition_pending_teams, \
@@ -131,8 +137,12 @@ class HomePageView(TemplateView):
             cache.set(c_key, popular_competitions, 60 * 60 * 1)
 
         context['latest_competitions'] = popular_competitions
-        context['featured_competitions'] = get_featured_competitions()
+        context['featured_competitions'] = get_featured_competitions(
+            popular_competitions_to_filter=popular_competitions
+        )
 
+        config, _ = Configuration.objects.get_or_create(pk=1)
+        context["front_page_message"] = mark_safe(config.front_page_message)
         return context
 
 
