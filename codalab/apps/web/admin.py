@@ -18,6 +18,8 @@ class CompetitionAdmin(admin.ModelAdmin):
                PhaseInlineAdmin,
                ParticipantInlineAdmin
                ]
+    search_fields = ['title', 'creator__username']
+    list_display = ['title', 'creator']
 admin.site.register(models.Competition, CompetitionAdmin)
 
 
