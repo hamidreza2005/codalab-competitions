@@ -68,6 +68,7 @@ from .utils import check_bad_scores, cancel_submission
 from codalab.celery import app
 
 from google.cloud.exceptions import NotFound
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 try:
     import azure
