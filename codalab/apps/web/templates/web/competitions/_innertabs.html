@@ -19,7 +19,7 @@
 {#                            <h1>Get data</h1>#}
                         {% endif %}
                         <script>
-                            {
+                            {   
                                 const content = '{{ content.processed_html|escapejs }}';
                                 document.write(DOMPurify.sanitize(
                                     content,

@@ -686,8 +686,11 @@ class Page(models.Model):
 
     @property
     def processed_html(self):
-        url = PublicStorage.url("")
-        asset_base_url = "{0}/competition_assets/{1}".format(url, self.competition.pk)
+        # We cannot just pass a blank URL anymore with S3 Boto3
+        # So we pass a space, and remove it
+        url = PublicStorage.url(" ").replace("%20", "")
+
+        asset_base_url = "{0}competition_assets/{1}".format(url, self.competition.pk)
         proc_html = re.sub(r'{{[ ]*ASSET_BASE_URL[ ]*}}', asset_base_url, self.html)
         return proc_html
 
