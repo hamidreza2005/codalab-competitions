@@ -20,6 +20,8 @@ StorageClass = get_storage_class(settings.DEFAULT_FILE_STORAGE)
 if settings.USE_AWS:
     BundleStorage = StorageClass(bucket_name=settings.AWS_STORAGE_PRIVATE_BUCKET_NAME)
     PublicStorage = StorageClass(bucket_name=settings.AWS_STORAGE_BUCKET_NAME)
+    BundleStorage.connection.auth_region_name = settings.S3DIRECT_REGION
+    PublicStorage.connection.auth_region_name = settings.S3DIRECT_REGION
 elif settings.USE_GCS:
     BundleStorage = StorageClass(bucket_name=settings.GS_PRIVATE_BUCKET_NAME)
     PublicStorage = StorageClass(bucket_name=settings.GS_PUBLIC_BUCKET_NAME)
