@@ -28,7 +28,8 @@ django-js-reverse==0.2.1
 django-mptt==0.9.1
 django-nose==1.4.6
 django-oauth-toolkit==0.11.0
-# django-storages==1.1.8 # Replaced by storages-redux.. need to uninstall storages..
+#django-storages==1.1.8 
+# Replaced by storages-redux.. need to uninstall storages..
 # Regular django-storages is now maintained by the author of redux
 django-storages==1.9.1
 django-tinymce==2.7.1
@@ -52,7 +53,7 @@ newrelic==2.54.0.41
 pylibmc==1.5.2
 
 celery==4.4.6
-boto==2.48.0
+boto==2.45.0
 boto3==1.14.22
 # We need a modified s3direct 0.4.1 which can use AWS_S3_HOST instead of forcing aws
 git+https://github.com/codalab/django-s3direct.git@feature/allow-different-endpoint

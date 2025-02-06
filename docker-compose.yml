@@ -25,26 +25,26 @@ services:
   # Caddy
   # --------------------------------------------------------------------------
   caddy:
-    image: abiosoft/caddy:latest
-    restart: unless-stopped
+    image: caddy:2.8.4
     hostname: caddy
     env_file: .env
+    environment:
+      - ACME_AGREE=true
     volumes:
-      - ./caddy/Caddyfile:/etc/Caddyfile
-      - ./codalab/static:/var/www/codalab/static
-      - ./certs/caddy:/etc/caddycerts
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./codalab/static:/var/www/codalab
+      - ./caddy/caddy_data:/data
+      - ./caddy/caddy_config:/config
+      - ./var/log/caddy:/var/log/
+    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - 80:80
+      - 443:443
     depends_on:
       - django
     links:
       - django
-    logging:
-      options:
-        max-size: "200k"
     container_name: caddy
-
 
   # --------------------------------------------------------------------------
   # Database

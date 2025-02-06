@@ -1,25 +1,36 @@
 {$CADDY_DOMAIN} {
-    gzip
-    root /var/www/codalab
-    proxy / django:{$DJANGO_PORT} {
-        transparent
-        except /static
+    encode gzip
+    root *  /var/www/codalab
+    file_server
+    @noStatic {
+    	not path /static/*
     }
+    reverse_proxy django:{$DJANGO_PORT}
 
     #push / /static/css/imports.css /static/js/vendor/jquery-1.10.2.min.js /static/js/Competition.js /static/js/main.js /static/bootstrap/js/bootstrap.min.js
     
     push
 
-    errors ../error.log {
-        # 404 404.html # Not Found
-        503 ./static/error/503.html # Site maintenance
-        500 ./static/error/50x.html # Internal Server Error
-        501 ./static/error/50x.html # Internal Server Error
-        502 ./static/error/50x.html # Internal Server Error
-        * ./static/error/default_error.html # Default error
+    handle_errors 500 501 502 {
+    	rewrite * ./static/error/50x.html
+    	file_server
+    }
+    handle_errors 503 {
+    	rewrite * ./static/error/503.html
+       # # 404 404.html # Not Found
+       # 503 ./static/error/503.html # Site maintenance
+       # 500 ./static/error/50x.html # Internal Server Error
+       # 501 ./static/error/50x.html # Internal Server Error
+       # 502 ./static/error/50x.html # Internal Server Error
+       # * ./static/error/default_error.html # Default error
+        file_server
+    }
+    handle_errors {
+    	rewrite * ./static/error/default_error.html
+    	file_server
     }
 
-    header / {
+    header {
         # Don't show Caddy/Gunicorn as server header.
         -Server
 
@@ -28,13 +39,13 @@
 
         # Only send Referer header to same origin.
         # Django CSRF protection is incompatible with referrer policy set to none.
-        Referrer-Policy "same-origin"
+        #Referrer-Policy "same-origin"
 
         # Enable cross-site filter (XSS) and tell browser to block detected attacks.
-        X-XSS-Protection "1; mode=block"
+        #X-XSS-Protection "1; mode=block"
 
         # Prevent some browsers from MIME-sniffing a response away from the declared Content-Type
-        X-Content-Type-Options "nosniff"
+        X-Content-Type-Options nosniff
 
         # Enable a strict content security policy.
         # Edit this if you need external sources on your site.
@@ -47,5 +58,5 @@
     }
 
     # The email address to use to generate a certificate with Letsencrypt.
-    tls {$CADDY_TLS_EMAIL}
+    #tls {$CADDY_TLS_EMAIL}
 }
