@@ -1281,7 +1281,6 @@ class MyCompetitionSubmissionOutput(View):
     """
     This view serves the files associated with a submission.
     """
-
     def get(self, request, *args, **kwargs):
         try:
             submission = models.CompetitionSubmission.objects.get(pk=kwargs.get('submission_id'))
@@ -1289,15 +1288,10 @@ class MyCompetitionSubmissionOutput(View):
             raise Http404()
         competition = submission.phase.competition
         filetype = kwargs.get('filetype')
-        content_type = 'text/plain'
-
-        if not submission.detailed_results_ready:
-            return StreamingHttpResponse("<h1>File not ready!</h1><br><p>Please wait a few minutes and check back!</p>", content_type='text/html')
 
         # Check competition admin permissions or user permissions
         if filetype == "detailed_results.html":
             published_to_leaderboard = models.PhaseLeaderBoardEntry.objects.filter(result=submission).exists()
-            content_type = "text/html"
         else:
             published_to_leaderboard = False
 
@@ -1305,39 +1299,24 @@ class MyCompetitionSubmissionOutput(View):
             if (competition.creator != request.user and request.user not in competition.admins.all()) and \
                             request.user != submission.participant.user:
                 raise Http404()
-
         try:
             file, file_type, file_name = submission.get_file_for_download(
                 filetype,
                 request.user,
                 override_permissions=published_to_leaderboard
             )
+
         except PermissionDenied:
             return HttpResponse(status=403)
         except ValueError:
             return HttpResponse(status=400)
         except:
             return HttpResponse(status=500)
-        if settings.USE_AWS or settings.USE_GCS:
-            if settings.USE_AWS:
-                temp_file_name = file_name
-            else:
-                temp_file_name = file.name
+        if settings.USE_AWS:
             if file_name:
-                try:
-                    response = StreamingHttpResponse(file.readlines(), content_type=content_type)
-                    if file_type == 'application/zip':
-                        response['Content-Type'] = 'application/zip'
-                        response['Content-Disposition'] = 'attachment; filename="{0}"'.format(file_name)
-                    else:
-                        response['Content-Type'] = file_type
-                    return response
-                except ValueError:
-                    raise Http404()
-                except NotFound:
-                    return StreamingHttpResponse(
-                        "<h1>File not ready!</h1><br><p>Please wait a few minutes and check back!</p>",
-                        content_type='text/html')
+                return HttpResponseRedirect(
+                    _make_url_sassy(file_name)
+                )
             else:
                 raise Http404()
         else:
@@ -1361,6 +1340,7 @@ class MyCompetitionSubmissionOutput(View):
                 else:
                     msg = "There was an error retrieving file '%s'. Please try again later or report the issue."
                     return HttpResponse(msg % filetype, status=200, content_type='text/plain')
+
 
 
 class MyCompetitionSubmissionDetailedResults(TemplateView):

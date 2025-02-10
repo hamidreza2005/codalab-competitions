@@ -7,7 +7,7 @@ import json
 import logging
 import StringIO
 import traceback
-
+import os
 import requests
 import yaml
 import zipfile
@@ -326,24 +326,22 @@ def compute_worker_run(data, priority=None, **kwargs):
 
 
 def _make_url_sassy(path, permission='r', duration=60 * 60 * 24):
-    if permission == 'r':
-        # GET instead of r (read) for AWS
-        method = 'GET'
-    elif permission == 'w':
-        # GET instead of w (write) for AWS
-        method = 'PUT'
-    else:
-        # Default to get if we don't know
-        method = 'GET'
     if settings.USE_AWS:
+        if permission == 'r':
+            # GET instead of r (read) for AWS
+            method = 'GET'
+        elif permission == 'w':
+            # GET instead of w (write) for AWS
+            method = 'PUT'
+        else:
+            # Default to get if we don't know
+            method = 'GET'
+
         # Remove the beginning of the URL (before bucket name) so we just have the path to the file
         path = path.split("{}/".format(settings.AWS_STORAGE_PRIVATE_BUCKET_NAME))[-1]
 
         # Path could also be in a format <bucket>.<url> so check that as well
         path = path.split("{}.{}".format(settings.AWS_STORAGE_PRIVATE_BUCKET_NAME, settings.AWS_S3_HOST))[-1]
-
-        # Spaces replaced with +'s, so we have to replace those...
-        path = path.replace('+', ' ')
 
         url = BundleStorage.connection.generate_url(
             expires_in=duration,
@@ -373,6 +371,7 @@ def _make_url_sassy(path, permission='r', duration=60 * 60 * 24):
             return sassy_url
         else:
             return ''
+
 
 
 def score(submission, job_id):
@@ -1285,7 +1284,15 @@ def make_modified_bundle(competition_pk, exclude_datasets_flag):
             counter = 0
             logger.info("Attempting to save new object.")
             try:
-                temp_comp_dump.data_file.save(zip_name, temp_comp_data)
+                #temp_comp_dump.data_file.save(zip_name, temp_comp_data)
+                with open("/tmp/{0}".format(zip_name), "wb") as f:
+                    f.write(zip_buffer.getvalue())
+                dump_path = "competition_dump/{0}/{1}".format(competition_pk, zip_name)
+                os.system("/app/codalab/scripts/mc alias set minio https://{0} {1} {2}".format(settings.AWS_S3_HOST, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY))
+                os.system("/app/codalab/scripts/mc alias ls")
+                os.system("/app/codalab/scripts/mc cp \"/tmp/{0}\" \"minio/{1}/competition_dump/{2}/\"".format(zip_name, settings.AWS_STORAGE_PRIVATE_BUCKET_NAME, competition_pk))
+                temp_comp_dump.data_file.name = dump_path
+                temp_comp_dump.save()
                 save_success = True
             except SoftTimeLimitExceeded:
                 logger.info("Failed to save object, retrying.")
