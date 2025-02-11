@@ -1388,9 +1388,8 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
     phase = models.ForeignKey(CompetitionPhase, related_name='submissions')
     secret = models.CharField(max_length=128, default='', blank=True)
     docker_image = models.CharField(max_length=128, default='', blank=True)
-    file = models.FileField(storage=BundleStorage, null=True, blank=True)
+    file = models.FileField(upload_to=_uuidify('submission_file_name'), storage=BundleStorage, null=True, blank=True)
     s3_file = S3DirectField(dest='submissions', null=True, blank=True)
-    # s3_file = models.FileField(null=True, blank=True)
     file_url_base = models.CharField(max_length=2000, blank=True)
     readable_filename = models.TextField(null=True, blank=True)
     description = models.CharField(max_length=256, blank=True)
@@ -1442,23 +1441,16 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
     is_migrated = models.BooleanField(default=False) # Will be used to auto  migrate
 
     # Team of the user in the moment of the submission
+    # This field is not used anywhere we can see 4/18/2018
     team = models.ForeignKey(Team, related_name='team', null=True, blank=True)
 
     queue_name = models.TextField(null=True, blank=True)
-
-    parent_submission = models.ForeignKey('CompetitionSubmission', null=True, blank=True, related_name="child_submissions")
-    task_id = models.CharField(default='', max_length=64)
 
     class Meta:
         unique_together = (('submission_number','phase','participant'),)
 
     def __unicode__(self):
         return "%s %s %s %s" % (self.pk, self.phase.competition.title, self.phase.label, self.participant.user.email)
-
-    @property
-    def get_jobs(self):
-        queried_jobs = Job.objects.filter(task_args_json__contains='"submission_id": {}}}'.format(self.pk), task_type='evaluate_submission')
-        return queried_jobs
 
     @property
     def metadata_predict(self):
@@ -1473,47 +1465,16 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
 
     @property
     def run_time(self):
-        sub_run_time = None
-        # Parent submission run time is a total of the children
-        if self.phase.is_parallel_parent and not self.phase.parent:
-            sub_run_time = datetime.timedelta()
-            for sub in self.child_submissions.all():
-                if sub.run_time:
-                    sub_run_time += sub.run_time
-        # Child submission run time is their own run time as best as we can calculate
+        if self.started_at and self.completed_at:
+            return self.completed_at - self.started_at
+        elif self.started_at:
+            return now() - self.started_at
         else:
-            # For submissions that actually have a completed time. (Finished)
-            if self.started_at and self.completed_at:
-                sub_run_time = self.completed_at - self.started_at
-            # For submissions in submitting/submitted/running
-            elif self.started_at and self.status.codename != 'cancelled':
-                sub_run_time = now() - self.started_at
-            # For cancelled submissions
-            elif self.started_at and self.status.codename == 'cancelled':
-                jobs = self.get_jobs
-                time_spent = datetime.timedelta()
-                for job in jobs:
-                    if job.updated > self.started_at:
-                        time_diff = job.updated - self.started_at
-                    else:
-                        time_diff = self.started_at - job.updated
-                    if time_diff:
-                        time_spent += time_diff
-                sub_run_time = time_spent
-        # Clamp returned submission run time to the phase's max execution time limit
-        if sub_run_time:
-            if self.parent_submission and not self.phase.is_parallel_parent and sub_run_time.total_seconds() > self.phase.execution_time_limit:
-                sub_run_time = datetime.timedelta(seconds=self.phase.execution_time_limit)
-            elif not self.parent_submission and self.phase.is_parallel_parent:
-                max_sub_time = 0
-                for phase in self.phase.competition.phases.all():
-                    max_sub_time += phase.execution_time_limit
-                if sub_run_time.total_seconds() > max_sub_time:
-                    sub_run_time = datetime.timedelta(seconds=max_sub_time)
-        return sub_run_time
+            return None
 
     def get_chahub_is_valid(self):
-        return self.phase.competition.published
+        # Make sure the submission was actually successfully created (has a PK, not over max submissions per day)
+        return self.pk
 
     def get_chahub_endpoint(self):
         return "submissions/"
@@ -1526,89 +1487,6 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
             "participant": self.participant.user.username,
             "submitted_at": self.submitted_at.isoformat(),
         }
-
-    @property
-    def detailed_results_ready(self):
-        if self.detailed_results_file and self.detailed_results_file.url and self.detailed_results_file.file:
-            try:
-                result = BundleStorage.exists(self.detailed_results_file.name)
-                return result
-            except:
-                logger.info("Could not find file for submission!")
-        return False
-
-    @staticmethod
-    def create_submission(request, submission_phase, ignore_submission_limits=False, **kwargs):
-        # And condition for if we're re-running a submission. Individaul submissions to tracks should be possible
-        # if submission_phase.parent and not ignore_submission_limits:
-        #     raise PermissionDenied("Cannot directly submit to a sub-phase")
-
-        if not submission_phase.is_parallel_parent:
-            phases_to_run_on = [submission_phase]
-        else:
-            # Run the submission against all subphases
-            # if not submission_phase.competition.submit_to_all_phases:
-                phases_to_run_on = [submission_phase] + list(submission_phase.sub_phases.all())
-            # else:
-            #     phases_to_run_on = CompetitionPhase.objects.filter(competition=submission_phase.competition)
-
-        # If we are dealing with a parallel parent, we need to make a parent submission
-        parent_submission = None
-
-        for phase in phases_to_run_on:
-            # obj = CompetitionSubmission.objects.create(phase=phase, **kwargs)
-            obj = CompetitionSubmission(phase=phase, **kwargs)
-
-            # If this is not a re-ran submission. Re-ran submissions have these kwargs passed.
-            if not kwargs.get('file') or kwargs.get('s3_file'):
-                if not hasattr(request, 'data'):
-                    raise ValidationError('Data attribute not found on request')
-                blob_name = request.data['id'] if 'id' in request.data else ''
-
-                if len(blob_name) <= 0:
-                    raise ParseError(detail='Invalid or missing tracking ID.')
-                if settings.USE_AWS:
-                    # obj.readable_filename = os.path.basename(blob_name)
-                    # Get file name from url and ensure we aren't getting GET params along with it
-                    obj.readable_filename = blob_name.split('/')[-1]
-                    obj.readable_filename = obj.readable_filename.split('?')[0]
-                    obj.s3_file = blob_name
-                else:
-                    obj.file.name = blob_name
-
-                obj.description = re.escape(request.query_params.get('description', ""))
-                if not phase.disable_custom_docker_image:
-                    obj.docker_image = re.escape(request.query_params.get('docker_image', ""))
-                if not obj.docker_image:
-                    obj.docker_image = phase.competition.competition_docker_image or settings.DOCKER_DEFAULT_WORKER_IMAGE
-                obj.team_name = re.escape(request.query_params.get('team_name', ""))
-                obj.organization_or_affiliation = re.escape(request.query_params.get('organization_or_affiliation', ""))
-                obj.method_name = re.escape(request.query_params.get('method_name', ""))
-                obj.method_description = re.escape(request.query_params.get('method_description', ""))
-                obj.project_url = re.escape(request.query_params.get('project_url', ""))
-                obj.publication_url = re.escape(request.query_params.get('publication_url', ""))
-                obj.bibtex = re.escape(request.query_params.get('bibtex', ""))
-                if phase.competition.queue:
-                    obj.queue_name = phase.competition.queue.name or ''
-
-            if phase.parent:
-                # This phase has parents so this should be child submission
-                obj.parent_submission = parent_submission
-
-            obj.save(ignore_submission_limits=ignore_submission_limits)
-
-            if phase.is_parallel_parent and parent_submission is None:
-                # First submission we make will be our parent submission
-                parent_submission = obj
-
-            if parent_submission and obj.pk == parent_submission.pk:
-                pass
-            else:
-                from apps.web.tasks import evaluate_submission
-                # Only evaluate submission that aren't parent submissions
-                evaluate_submission.delay(obj.pk, obj.phase.is_scoring_only)
-
-        return parent_submission or obj
 
     def save(self, ignore_submission_limits=False, *args, **kwargs):
         print "Saving competition submission."
@@ -1630,9 +1508,10 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
         self.dislike_count = self.dislikes.all().count()
 
         if not self.readable_filename:
-            if hasattr(self, 'file'):
+            if hasattr(self, 'file') or hasattr(self, 's3_file'):
                 if settings.USE_AWS:
-                    self.readable_filename = split(self.s3_file)[1]
+                    # Sometimes file is missing, i.e. in tests
+                    self.readable_filename = split(self.s3_file)[1] if self.s3_file else "N/A"
                 else:
                     if self.file.name:
                         try:
@@ -1642,21 +1521,15 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
 
         # only at save on object creation should it be submitted
         if not self.pk:
-            subnum = CompetitionSubmission.objects.filter(phase=self.phase, participant=self.participant).aggregate(
-                Max('submission_number')
-            )['submission_number__max']
-            if subnum is not None:
-                self.submission_number = subnum + 1
-            else:
-                self.submission_number = 1
-
-            print("SAVING SUBMISSION #", self.submission_number)
-            print("SAVING SUBMISSION PHASE =", self.phase)
-
-            # Subphases (phases with parents) should ignore limits
-            if not ignore_submission_limits or not self.phase.parent:
+            if self.participant.user.username == 'chagrade_bot':
+                ignore_submission_limits = True
+            if not ignore_submission_limits:
                 print "This is a new submission, getting the submission number."
-
+                subnum = CompetitionSubmission.objects.filter(phase=self.phase, participant=self.participant).aggregate(Max('submission_number'))['submission_number__max']
+                if subnum is not None:
+                    self.submission_number = subnum + 1
+                else:
+                    self.submission_number = 1
 
                 failed_count = CompetitionSubmission.objects.filter(phase=self.phase,
                                                                     participant=self.participant,
@@ -1669,12 +1542,6 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
                 submission_count = CompetitionSubmission.objects.filter(phase=self.phase,
                                                                                participant=self.participant).exclude(
                     status__codename=CompetitionSubmissionStatus.FAILED).count()
-
-                total_sub_run_time = self.participant.get_used_execution_time(phase_id=self.phase.id)
-
-                if total_sub_run_time >= datetime.timedelta(seconds=self.phase.max_execution_time_limit):
-                    print 'PERMISSION DENIED; Max execution time reached'
-                    raise PermissionDenied("The maximum amount of compute time for submissions has been reached.")
 
                 if (submission_count >= self.phase.max_submissions):
                     print "Checking to see if the submission_count (%d) is greater than the maximum allowed (%d)" % (submission_count, self.phase.max_submissions)
@@ -1699,9 +1566,18 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
 
                     print 'Count is %s and maximum is %s' % (submissions_from_today_count, self.phase.max_submissions_per_day)
 
-                    if submissions_from_today_count + 1 - failed_count > self.phase.max_submissions_per_day or self.phase.max_submissions_per_day == 0:
+                    # if submissions_from_today_count + 1 - failed_count > self.phase.max_submissions_per_day or self.phase.max_submissions_per_day == 0:
+                    if (submissions_from_today_count + 1) > self.phase.max_submissions_per_day or self.phase.max_submissions_per_day == 0:
                         print 'PERMISSION DENIED'
                         raise PermissionDenied("The maximum number of submissions this day have been reached.")
+            else:
+                # Make sure we're incrementing the number if we're forcing in a new entry
+                while CompetitionSubmission.objects.filter(
+                    phase=self.phase,
+                    participant=self.participant,
+                    submission_number=self.submission_number
+                ).exists():
+                    self.submission_number += 1
 
             self.status = CompetitionSubmissionStatus.objects.get_or_create(codename=CompetitionSubmissionStatus.SUBMITTING)[0]
 
@@ -1842,7 +1718,6 @@ class SubmissionResultGroup(models.Model):
     def __str__(self):
         return "{}:{}".format(self.label, self.key)
 
-
 class SubmissionResultGroupPhase(models.Model):
     """Defines the columns of a Leaderboard."""
     group = models.ForeignKey(SubmissionResultGroup)
@@ -1855,7 +1730,6 @@ class SubmissionResultGroupPhase(models.Model):
         if self.group.competition != self.phase.competition:
             raise IntegrityError("Group and Phase competition must be the same")
         super(SubmissionResultGroupPhase, self).save(*args, **kwargs)
-
 
 class SubmissionScoreDef(models.Model):
     """Defines the columns of a Leaderboard."""
@@ -2658,7 +2532,7 @@ def add_submission_to_leaderboard(submission):
 
 
 def get_current_phase(competition):
-    all_phases = CompetitionPhase.objects.filter(competition=competition, parent=None).order_by('start_date')
+    all_phases = competition.phases.all().order_by('start_date')
     phase_iterator = iter(all_phases)
     active_phase = None
     for phase in phase_iterator:

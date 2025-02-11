@@ -1289,7 +1289,6 @@ def make_modified_bundle(competition_pk, exclude_datasets_flag):
                     f.write(zip_buffer.getvalue())
                 dump_path = "competition_dump/{0}/{1}".format(competition_pk, zip_name)
                 os.system("/app/codalab/scripts/mc alias set minio https://{0} {1} {2}".format(settings.AWS_S3_HOST, settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY))
-                os.system("/app/codalab/scripts/mc alias ls")
                 os.system("/app/codalab/scripts/mc cp \"/tmp/{0}\" \"minio/{1}/competition_dump/{2}/\"".format(zip_name, settings.AWS_STORAGE_PRIVATE_BUCKET_NAME, competition_pk))
                 temp_comp_dump.data_file.name = dump_path
                 temp_comp_dump.save()

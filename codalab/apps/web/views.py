@@ -1288,7 +1288,6 @@ class MyCompetitionSubmissionOutput(View):
             raise Http404()
         competition = submission.phase.competition
         filetype = kwargs.get('filetype')
-
         # Check competition admin permissions or user permissions
         if filetype == "detailed_results.html":
             published_to_leaderboard = models.PhaseLeaderBoardEntry.objects.filter(result=submission).exists()
