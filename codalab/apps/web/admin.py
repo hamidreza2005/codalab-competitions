@@ -16,8 +16,8 @@ class ParticipantInlineAdmin(admin.TabularInline):
 
 class CompetitionAdmin(admin.ModelAdmin):
     inlines = [
-               PhaseInlineAdmin,
-               ParticipantInlineAdmin
+               #PhaseInlineAdmin,
+               #ParticipantInlineAdmin
                ]
 admin.site.register(models.Competition, CompetitionAdmin)
 

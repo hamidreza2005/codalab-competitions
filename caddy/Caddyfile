@@ -1,4 +1,4 @@
-{$CADDY_DOMAIN} {
+{$CADDY_DOMAIN}:80 {
     encode gzip
     root *  /var/www/codalab
     file_server
