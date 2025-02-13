@@ -1672,7 +1672,7 @@ class CompetitionSubmission(ChaHubSaveMixin, models.Model):
 
         if settings.USE_AWS:
             if key == 'input.zip':
-                file_name = self.s3_file
+                file_name = 'https://'+settings.AWS_S3_HOST+'/'+settings.AWS_STORAGE_PRIVATE_BUCKET_NAME+'/'+str(self.file)
             else:
                 file_name = getattr(self, file_attr).name
         else:
