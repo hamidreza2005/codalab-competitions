@@ -1,4 +1,6 @@
-version: '2'
+volumes:
+  minio_data:
+    driver: local
 services:
   # --------------------------------------------------------------------------
   # HTTP Server
@@ -37,6 +39,8 @@ services:
       - ${LOGGING_DIR}/psql:/var/log/psql
       - ${DB_DATA_PATH}:/var/lib/postgresql/data
       - ./backups:/app/backups
+    ports:
+      - "5432:5432"
     env_file: .env
     logging:
       options:
@@ -183,3 +187,39 @@ services:
     mem_limit: 1g
     memswap_limit: 1g
     container_name: worker_compute
+#   minio:
+#     image: minio/minio
+#     environment:
+#       MINIO_ROOT_USER: minioadmin
+#       MINIO_ROOT_PASSWORD: minioadmin
+#       MINIO_API_CORS_ALLOW_ORIGIN: "*"
+#     ports: 
+#       - "9000:9000"
+#       - "9001:9001"
+#     command: server --address ":9000" /data --console-address ":9001"
+#     volumes:
+#       - minio_data:/data
+#       - ./docker/minio/config:/root/.minio/config
+#     container_name: minio
+#     networks:
+#       - codalab-net
+#   mc:
+#     image: minio/mc
+#     depends_on:
+#       - minio
+#     entrypoint: >
+#       /bin/sh -c "
+#       sleep 5;
+#       mc alias set myminio http://minio:9000 minioadmin minioadmin;
+#       mc mb myminio/private;
+#       mc cors set myminio/private /root/.minio/config/cors.json;
+#       tail -f /dev/null;
+#       "
+#     volumes:
+#       - ./docker/minio/config:/root/.minio/config
+#     networks:
+#       - codalab-net
+
+# networks:
+#   codalab-net:
+#     driver: bridge

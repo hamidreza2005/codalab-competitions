@@ -1,5 +1,6 @@
 Django==1.11.29
 alembic==0.6.7
+setuptools-scm>=8.0
 argparse
 # azure==0.7.1
 closure_linter
